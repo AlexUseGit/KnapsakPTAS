@@ -1,60 +1,3 @@
-
-/* ======================================================================
-	     EXPKNAP.c, David Pisinger   march 1992, modified april 1994
-   ====================================================================== */
-
-/* This is the C-code corresponding to the paper:
- *
- *   D. Pisinger
- *   An expanding-core algorithm for the exact 0-1 Knapsack Problem
- *   European Journal of Operational Research, 87 (1995), 175-187
- *
- * Further details on the project can also be found in
- *
- *   D. Pisinger
- *   Algorithms for Knapsack Problems
- *   Report 95/1, DIKU, University of Copenhagen
- *   Universitetsparken 1
- *   DK-2100 Copenhagen
- *
- * The current code is intended for performing extensive tests with
- * randomly generated instances. It should however be easy to derive
- * the "plain" expknap algorithm from the listing by stripping several
- * test routines.
- *
- * The code has been tested on a hp9000/735, and conforms with the
- * ANSI-C standard apart from some of the timing routines (which may
- * be removed). To compile the code use:
- *
- *   cc -Aa -O -o expknap expknap.c -lm
- * 
- * The code is run by issuing the command
- *
- *   expknap n r type
- *
- * where n: number of items, 
- *       r: range of coefficients, 
- *       type: 1=uncorr., 2=weakly corr., 3=strongly corr., 4=subset sum
- * output will be appended to the file "trace.exp".
- *
- * Please do not re-distribute. A new copy can be obtained by contacting
- * the author at the adress below. Errors and questions are refered to:
- *
- *   David Pisinger, associate professor
- *   DIKU, University of Copenhagen,
- *   Universitetsparken 1,
- *   DK-2100 Copenhagen.
- *   e-mail: pisinger@diku.dk
- *   fax: +45 35 32 14 01
- */
-
-
-/* ======================================================================
-	                          definitions
-   ====================================================================== */
-
-#define TESTS    1 /* Nuber of test instances to be generated */
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
@@ -64,18 +7,13 @@
 #include <math.h>
 #include <malloc.h>
 #include <vector>
+#include <io.h>
 
-
-/* ======================================================================
-				     macros
-   ====================================================================== */
-
-#define srand(x)     srand(x)
+     
 #define random(x)    (rand() % (x))
 
 #define DET(a1, a2, b1, b2)        ((a1) * (long) (b2) - (a2) * (long) (b1))
 #define SWAP(a, b)             { register item t; t = *a; *a = *b; *b = t; }
-#define NO(f,i)                                            ((int) ((i+1)-f))
 #define TRUE  1
 #define FALSE 0
 #define SORTSTACK 200
@@ -130,131 +68,8 @@ boolean **ehead, **estack;         /* exception stack */
 
 
 /* ======================================================================
-				 test variables
-   ====================================================================== */
-
-FILE *trace;
-long iterations;
-long heur;
-long dantzig;
-long touch;
-long redu;
-long sorts;
-
-
-/* ======================================================================
-                        timing routines for hp9000/735
-   ====================================================================== */
-
-#define  _INCLUDE_POSIX_SOURCE
-#include <io.h>
-
-
-//struct tms timestart, timeend;
-
-//void starttime(void)
-//{
-//    times(&timestart);
-//}
-//
-//void endtime(long *time)
-//{
-//  double t1, t2;
-//  times(&timeend);
-//  t1 = (double) (timeend.tms_utime-timestart.tms_utime) / sysconf(_SC_CLK_TCK);
-//  t2 = (double) (timeend.tms_stime-timestart.tms_stime) / sysconf(_SC_CLK_TCK);
-//  *time = t1 * 1000;
-//}
-
-
-/* ======================================================================
-                                   sumdata
-   ====================================================================== */
-
-void sumdata(int n1, int r1, int type1, long iterations, long heur, long z,
-         long c, long dantzig, long touch, long redu, long sorts)
-{
-  static long n;
-  static long r;
-  static long t;
-  static long iterates  = 0;
-  static long touched   = 0;
-  static long simpred   = 0;
-  static long coresize  = 0;
-  static long greedygap = 0;
-  static long gap       = 0;
-  static long tottime   = 0;
-  static long zsum      = 0;
-  static long csum      = 0;
-  static double sqtime  = 0.0;
-  double mean, variance, stddev;
-
-  if (n1 == 0) {
-    mean     = tottime / (1000 * (double) TESTS);
-    variance = sqtime / TESTS - mean * mean;
-    stddev   = sqrt(variance);
-    fprintf(trace,"n           = %ld\n", n);
-    fprintf(trace,"r           = %ld\n", r);
-    fprintf(trace,"t           = %ld\n", t);
-    fprintf(trace,"iterations  = %.0lf\n", iterates    / (double)    TESTS);
-    fprintf(trace,"touched     = %.1lf\n", touched     / (double)    TESTS);
-    fprintf(trace,"touchedpct  = %.1lf\n", 100*touched / ((double) n*TESTS));
-    fprintf(trace,"simpreduced = %.1lf\n", simpred     / (double)    TESTS);
-    fprintf(trace,"coresize    = %.0lf\n", coresize    / (double)    TESTS);
-    fprintf(trace,"corepct     = %.2lf\n", 100*coresize/ ((double) n*TESTS));
-    fprintf(trace,"greedygap   = %.1lf\n", greedygap   / (double)    TESTS);
-    fprintf(trace,"gap         = %.1lf\n", gap         / (double)    TESTS);
-    fprintf(trace,"zsum        = %.0lf\n", zsum        / (double)        1);
-    fprintf(trace,"csum        = %.0lf\n", csum        / (double)        1);
-    fprintf(trace,"time        = %.2lf\n", mean        / (double)        1);
-    fprintf(trace,"variance    = %.2lf\n", variance    / (double)        1);
-    fprintf(trace,"stddev      = %.2lf\n", stddev      / (double)        1);
-  } else {
-    n          = n1;
-    r          = r1;
-    t          = type1;
-    iterates  += iterations;          /* iterations by branch-and-bound */
-    touched   += touch;               /* variables touched by reduction */
-    simpred   += redu;                /* variables reduced by reduction */
-    coresize  += sorts;               /* sorted core size               */
-    greedygap += z-heur;              /* gap for greedy bound           */
-    gap       += dantzig-z;           /* gap between LP and IP optimum  */
-  //  tottime   += time;                /* total computational time       */
-    zsum       = ((zsum+z) % 1000);   /* controle sum of all solutions  */
-    csum       = ((csum+c) % 1000);   /* controle sum of all capacities */
- //   sqtime    += (time / (double) 1000) * (time / (double) 1000);
-  }
-}
-
-
-/* ======================================================================
-        		         error
-   ====================================================================== */
-
-void error(char *str, ...)
-{
-  va_list args;
-
-  va_start(args, str);
-  vprintf(str, args); printf("\n");
-  vfprintf(trace, str, args); fprintf(trace, "\n");
-  va_end(args);
-  printf("STOP !!!\n\n"); fprintf(trace, "STOP !!!\n\n");
-  fclose(trace);
-  exit(-1);
-}
-
-
-/* ======================================================================
-				  palloc
-   ====================================================================== */
-
-void pfree(void *p)
-{
-  if (p == NULL) error("freeing null");
-  free(p);
-}
-
+          expknap algorithm
+====================================================================== */
 
 void * palloc(size_t no, size_t each)
 {
@@ -263,38 +78,11 @@ void * palloc(size_t no, size_t each)
 
   size = no * (long) each;
   if (size == 0) size = 1;
-  if (size != (size_t) size) error("alloc too big %ld", size);
   p = (long*) malloc(size);
-  if (p == NULL) error("no memory size %ld", size); 
   return p;
 }
 
-
-/* ======================================================================
-				showitems
-   ====================================================================== */
-
-void showitems(item *f, item *l)
-{
-  item *i;
-  stype ps, ws;
-
-  printf("showitems");
-  ps = 0; ws = 0;
-  for (i = f; i <= l; i++) {
-    printf("%d: (%2hd,%2hd) %8lf %1hd\n", 
-           (int) ((i+1)-f), i->p, i->w, i->p / (double) i->w, *(i->x));
-    if (i->x) { ps += i->p; ws += i->w; }
-  }
-  printf("showitems (%ld,%ld)", ps, ws);
-}
-
-
-/* ======================================================================
-				maketest
-   ====================================================================== */
-
-stype maketest(exitem *f, exitem *l, int type, int r, int v)
+stype maketest(exitem *f, exitem *l, int r)
 {
   register exitem *j;
   register stype sum;
@@ -303,33 +91,15 @@ stype maketest(exitem *f, exitem *l, int type, int r, int v)
 
   sum = 0; r1 = r/10;
   for (j = f; j <= l; j++) {
-
     j->w = random(r) + 1;
-    switch (type) {
-      case 1: j->p = random(r) + 1;
-	      break;
-      case 2: j->p = random(2*r1+1) + j->w - r1;
-	      if (j->p <= 0) j->p = 1;
-	      break;
-      case 3: j->p = j->w + 10;
-	      break;
-      case 4: j->p = j->w;
-	      break;
-    }
-
+    j->p = random(r) + 1;
     sum += j->w;
   }
   c = sum / 2;
   return c;
 }
 
-
-/* ======================================================================
-				testinstance
-   ====================================================================== */
-
-void testinstance(exitem **f, exitem **l, int n, 
-                  int r, int type, int v)
+void testinstance(exitem **f, exitem **l, int n, int r)
 {
   exitem *a;
 
@@ -338,63 +108,20 @@ void testinstance(exitem **f, exitem **l, int n,
   *f = a; *l = &a[n-1];
 
   /* make test instance */
-  c = maketest(*f, *l, type, r, v);
+  c = maketest(*f, *l, r);
 }
 
-
-/* ======================================================================
-				freeinstance
-   ====================================================================== */
-
-void freeinstance(exitem *f)
-{
-  pfree(f);
-}
-
-
-/* ======================================================================
-				definesolution
-   ====================================================================== */
 
 void definesolution(void)
 {
   register boolean **j;
-
-  for (j = ehead; j < estack; j++)
-  {
-      **j = 1 - **j;
-  }
+  for (j = ehead; j < estack; j++) **j = 1 - **j;
 }
-
-
-/* ======================================================================
-				checksol
-   ====================================================================== */
-
-long checksol(exitem *f, exitem *l, long c, long z)
-{
-  register exitem *i;
-  register stype sump, sumw;
-
-  sump = 0; sumw = 0;
-  for (i = f; i <= l; i++) {
-    if (i->x) { sump += i->p; sumw += i->w; }
-  }
-  /* printf("sump %ld, z %ld, sumw %ld, c %ld\n", sump, z, sumw, c); */
-  if ((sumw > c) || (sump != z)) error("wrong solution"); 
-  return sump;
-}
-
-
-/* ======================================================================
-				pushe
-   ====================================================================== */
 
 void cleare()
 {
   estack = ehead;
 }
-
 
 void pushe(item *i)
 {
@@ -402,24 +129,13 @@ void pushe(item *i)
   estack++;
 }
 
-
-/* ======================================================================
-				pushi
-   ====================================================================== */
-
 void pushi(istack **stack, item *f, item *l, stype ws)
 {
   register istack *pos;
   pos = *stack;
   pos->f = f; pos ->l = l; pos->ws = ws;
   (*stack)++;
-  if ((pos == iend1) || (pos == iend2)) error("istack full");
 }
-
-
-/* =========================================================================
-                                   reduce
-   ========================================================================= */
 
 void reduce(item **f, item **l)
 {
@@ -433,9 +149,7 @@ void reduce(item **f, item **l)
   if (i <= br) {
     k = fsort - 1;
     while (i <= j) {
-      touch++;
       if (DET(-j->p, -j->w, pb, wb) < q) {
-        redu++;
         SWAP(i, j); i++;       /* not feasible */
       } else {
         SWAP(j, k); j--; k--;  /* feasible */
@@ -446,9 +160,7 @@ void reduce(item **f, item **l)
   } else {
     k = lsort + 1;
     while (i <= j) {
-      touch++;
       if (DET(i->p, i->w, pb, wb) < q) {
-        redu++;
         SWAP(i, j); j--;       /* not feasible */
       } else {
         SWAP(i, k); i++; k++;  /* feasible */
@@ -458,11 +170,6 @@ void reduce(item **f, item **l)
     *f = lsort + 1; *l = k - 1;
   }
 }
-
-
-/* ======================================================================
-				partsort
-   ====================================================================== */
 
 void partsort(item *f, item *l, stype ws)
 {
@@ -501,11 +208,6 @@ void partsort(item *f, item *l, stype ws)
   }
 }
 
-
-/* ======================================================================
-				sorti
-   ====================================================================== */
-
 boolean sorti(istack **stack)
 /* returns TRUE if expansion succeeded, FALSE if no more intervals */
 {
@@ -521,16 +223,10 @@ boolean sorti(istack **stack)
   return TRUE;
 }
 
-
-/* ======================================================================
-				elebranch
-   ====================================================================== */
-
 short elebranch(itype ps, itype ws, item *s, item *t)
 {
   short improved;
 
-  iterations++;
   improved = FALSE;
   if (ws <= 0) {
     if (ps > z) {
@@ -559,11 +255,6 @@ short elebranch(itype ps, itype ws, item *s, item *t)
   return improved;
 }
 
-
-/* ======================================================================
-				heuristic
-   ====================================================================== */
-
 stype heuristic(item *f, item *l)
 {
   register item *i;
@@ -580,7 +271,6 @@ stype heuristic(item *f, item *l)
 
   /* determine dantzig bound, and use it as upper bound on z */
   dz = (c - wsb) * br->p / br->w;
-  dantzig = psb + dz;
 
   /* define initial solution */
   cleare();
@@ -606,11 +296,6 @@ stype heuristic(item *f, item *l)
 
   return z;
 }
-
-
-/* ======================================================================
-				expknap
-   ====================================================================== */
 
 stype expknap(exitem *f, exitem *l, stype cap)
 {
@@ -640,17 +325,15 @@ stype expknap(exitem *f, exitem *l, stype cap)
 
   /* solve problem */
   z = heuristic(fitem, litem);
-  heur = z + psb;
   elebranch(0, wsb-c, br-1, br);
 
   /* define solution */
   definesolution();
 
-  pfree(ihead1);
-  pfree(ihead2);
-  pfree(ehead);
-  pfree(fitem);
-  sorts = lsort - fsort + 1;
+  free(ihead1);
+  free(ihead2);
+  free(ehead);
+  free(fitem);
   return z + psb;
 }
 
@@ -663,57 +346,39 @@ void main(int argc, char *argv[])
 {
   exitem *f, *l;
   stype z;
-  long time;
-  int n, r, type, v;
+  int n, r;
 
-  if (argc == 4) {
+  if (argc == 3) {
     n = atoi(argv[1]);
     r = atoi(argv[2]);
-    type = atoi(argv[3]);
-    printf("Expknap %d, %d, %d\n", n, r, type);
+    printf("Expknap %d, %d, %d\n", n, r);
   } else {
     printf("Expknap\n");
     printf("n = ");
     scanf("%d", &n);
     printf("r = ");
     scanf("%d", &r);
-    printf("t = ");
-    scanf("%d", &type);
   }
 
-  trace = fopen("trace.exp","a");
-  fprintf(trace,"\nEXPKNAP: n: %d, r: %d, type: %d\n", n, r, type);
-  for (v = 1; v <= TESTS; v++) {
-    srand(v);
-    iterations = 0;
-    redu       = 0;
-    touch      = 0;
-    testinstance(&f, &l, n, r, type, v);
+  srand(time(NULL));
+  testinstance(&f, &l, n, r);
 
-    std::vector<exitem> task;
-    for (exitem* e = f; e <= l; e++)
-    {
-        task.push_back(*e);
-    }
-
-   // starttime();
-    z = expknap(f, l, c);
-
-    std::vector<exitem> sol;
-    for (exitem* e = f; e <= l; e++)
-    {
-        sol.push_back(*e);
-    }
-  //  endtime(&time);
-
-    /* check solution */
-    checksol(f, l, c, z);
-
-    freeinstance(f);
-    sumdata(n, r, type, iterations, heur, z,
-            c, dantzig, touch, redu, sorts);
+  std::vector<exitem> task;
+  for (exitem* e = f; e <= l; e++)
+  {
+      task.push_back(*e);
   }
-  sumdata(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-  fclose(trace);
+
+  // starttime();
+  z = expknap(f, l, c);
+
+  std::vector<exitem> sol;
+  for (exitem* e = f; e <= l; e++)
+  {
+      sol.push_back(*e);
+  }
+  // endtime(&time);
+
+  free(f);
 }
 
