@@ -3,7 +3,7 @@
 
 int main()
 {
-    int taskCount = 1000;
+    int taskCount = 1;
     int taskSize = 10;
     int maxWeight = 10;
     int maxPrice = 10;
